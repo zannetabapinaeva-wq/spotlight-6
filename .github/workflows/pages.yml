@@ -1,0 +1,48 @@
+name: Publish Spotlight 6 web app
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/pages.yml']
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Restore verified public application
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --output app.apk https://github.com/zannetabapinaeva-wq/spotlight-6/releases/download/v1.0.0/Spotlight-6.apk
+          echo '1440dfcd0ab455d52925ef44759c133536b0c49639a193f6ea14d1c607506e1c  app.apk' | sha256sum --check
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          from zipfile import ZipFile
+          import re
+          with ZipFile('app.apk') as z:
+           for name in z.namelist():
+            if name.startswith('assets/web/') and not name.endswith('/'):
+             p=Path('public')/name.removeprefix('assets/web/'); p.parent.mkdir(parents=True,exist_ok=True); p.write_bytes(z.read(name))
+          p=Path('public/index.html')
+          p.write_text(re.sub(r'<script src="android-bridge.js"></script>','',p.read_text()))
+          (Path('public')/'android-bridge.js').unlink(missing_ok=True)
+          (Path('public')/'.nojekyll').touch()
+          assert 'grade6.js' in p.read_text()
+          assert (Path('public/assets/icon6.png')).exists()
+          assert 'android-bridge' not in p.read_text()
+          PYCODE
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: public
+      - uses: actions/deploy-pages@v4
+        id: deployment
